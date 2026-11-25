@@ -8,6 +8,7 @@
  * Requires the initial data seed (sales channel, shipping profile, Color option).
  */
 import {
+  createInventoryLevelsWorkflow,
   createProductCategoriesWorkflow,
   createProductsWorkflow,
 } from '@medusajs/medusa/core-flows';
@@ -21,6 +22,10 @@ import type { ExecArgs } from '@medusajs/framework/types';
 
 const SALES_CHANNEL_NAME = 'Default Sales Channel';
 const BATCH_SIZE = 4;
+const STOCK_LOCATION_NAME = 'European Warehouse';
+const STOCK_PER_VARIANT = 25;
+
+const skuFor = (handle: string, color: string) => `${handle.toUpperCase()}-${color.toUpperCase()}`;
 
 type CatalogueProduct = {
   handle: string;
@@ -185,8 +190,7 @@ export default async function seedDjCatalogue({ container }: ExecArgs) {
   const toCreate = PRODUCTS.filter((product) => !takenHandles.has(product.handle));
 
   if (!toCreate.length) {
-    logger.info('Every DJ product already exists. Nothing to do.');
-    return;
+    logger.info('Every DJ product already exists.');
   }
 
   const inputs = toCreate.map((product) => {
@@ -211,7 +215,7 @@ export default async function seedDjCatalogue({ container }: ExecArgs) {
       options: [{ id: colorOption.id }],
       variants: product.colors.map((color) => ({
         title: color,
-        sku: `${product.handle.toUpperCase()}-${color.toUpperCase()}`,
+        sku: skuFor(product.handle, color),
         options: { Color: color },
         prices: [
           { amount: product.priceEur, currency_code: 'eur' },
@@ -233,6 +237,52 @@ export default async function seedDjCatalogue({ container }: ExecArgs) {
     created += batch.length;
     logger.info(`Created ${created}/${inputs.length} DJ products`);
   }
+
+  // ---- 3b. Stock: a variant is only sellable with inventory at a location ----
+
+  const { data: stockLocations } = await query.graph({
+    entity: 'stock_location',
+    fields: ['id', 'name'],
+    filters: { name: STOCK_LOCATION_NAME },
+  });
+  const stockLocation = stockLocations[0];
+
+  if (!stockLocation) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_FOUND,
+      `Stock location "${STOCK_LOCATION_NAME}" not found. Run the initial data seed first.`,
+    );
+  }
+
+  const djSkus = new Set(
+    PRODUCTS.flatMap((product) => product.colors.map((color) => skuFor(product.handle, color))),
+  );
+
+  const { data: inventoryItems } = await query.graph({
+    entity: 'inventory_item',
+    fields: ['id', 'sku', 'location_levels.location_id'],
+  });
+
+  const needStock = inventoryItems.filter(
+    (item) =>
+      item.sku &&
+      djSkus.has(item.sku) &&
+      !(item.location_levels ?? []).some((level) => level?.location_id === stockLocation.id),
+  );
+
+  if (needStock.length) {
+    await createInventoryLevelsWorkflow(container).run({
+      input: {
+        inventory_levels: needStock.map((item) => ({
+          location_id: stockLocation.id,
+          inventory_item_id: item.id,
+          stocked_quantity: STOCK_PER_VARIANT,
+        })),
+      },
+    });
+    logger.info(`Stocked ${needStock.length} variant(s) at "${stockLocation.name}"`);
+  }
+
   // ---- 4. Let the search index catch up (best effort) ----------------------
 
   // `medusa exec` is short-lived: it can exit before the async product.created

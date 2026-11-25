@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "packageManager": "pnpm@12.23.0",
   "engines": {
-    "node": ">=26"
+    "node": ">=24"
   },
   "scripts": {
     "format": "prettier --write .",

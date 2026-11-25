@@ -233,18 +233,28 @@ export default async function seedDjCatalogue({ container }: ExecArgs) {
     created += batch.length;
     logger.info(`Created ${created}/${inputs.length} DJ products`);
   }
-
-  // ---- 4. Let the search index catch up ------------------------------------
+  // ---- 4. Let the search index catch up (best effort) ----------------------
 
   // `medusa exec` is short-lived: it can exit before the async product.created
-  // handler finishes. Replaying the ingestion here is awaited and upserts.
-  const search = container.resolve(Modules.SEARCH);
-  const { data: allProducts } = await query.graph({ entity: 'product', fields: ['id'] });
+  // handler finishes, so we replay the ingestion and wait for it. On a fresh
+  // database the search index has no active version until the backend has
+  // booted once, so this step can fail. The products already exist by now, so
+  // a search problem must not fail the whole seed.
+  try {
+    const search = container.resolve(Modules.SEARCH);
+    const { data: allProducts } = await query.graph({ entity: 'product', fields: ['id'] });
 
-  await search.ingest({
-    name: 'product.created',
-    data: allProducts.map((product) => ({ id: product.id })),
-  } as never);
+    await search.ingest({
+      name: 'product.created',
+      data: allProducts.map((product) => ({ id: product.id })),
+    } as never);
+
+    logger.info('Search index caught up.');
+  } catch (error) {
+    logger.warn(
+      `Search ingestion skipped: ${(error as Error).message}. Start the backend once, then check the index.`,
+    );
+  }
 
   logger.info('Done. Open the Admin to see the DJ catalogue.');
 }

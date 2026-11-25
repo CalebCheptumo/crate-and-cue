@@ -2,13 +2,8 @@ import { Suspense } from 'react';
 import { connection } from 'next/server';
 import type { HttpTypes } from '@medusajs/types';
 import { sdk } from '@/lib/medusa';
-
-function formatPrice(amount: number, currencyCode: string) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: currencyCode.toUpperCase(),
-  }).format(amount);
-}
+import Link from 'next/link';
+import { formatPrice } from '@/lib/format';
 
 /** Lowest calculated price across a product's variants, if any have one. */
 function cheapestAmount(product: HttpTypes.StoreProduct): number | undefined {
@@ -45,7 +40,8 @@ async function ProductList() {
         return (
           <li key={product.id} className="flex justify-between gap-4">
             <span>
-              {product.title} <span className="text-zinc-500">({product.handle})</span>
+              <Link href={`/products/${product.handle}`}>{product.title}</Link>{' '}
+              <span className="text-zinc-500">({product.handle})</span>
             </span>
             <span>{amount === undefined ? '—' : formatPrice(amount, region.currency_code)}</span>
           </li>
@@ -59,6 +55,9 @@ export default function Home() {
   return (
     <main className="mx-auto max-w-2xl p-8">
       <h1 className="mb-6 text-3xl font-semibold">Crate &amp; Cue</h1>
+      <Link href="/cart" className="mb-6 inline-block text-zinc-400">
+        View cart
+      </Link>
       <Suspense fallback={<p>Loading products…</p>}>
         <ProductList />
       </Suspense>

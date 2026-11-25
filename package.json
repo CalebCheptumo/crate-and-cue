@@ -1,0 +1,16 @@
+{
+  "name": "crate-and-cue",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@12.23.0",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "^3.10.1"
+  }
+}
